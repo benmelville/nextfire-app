@@ -1,8 +1,9 @@
 import { signInWithPopup } from 'firebase/auth';
-import { auth, provider } from '../lib/firebase';
-import { useContext, useState } from 'react';
+import { writeBatch, doc, getDoc } from 'firebase/firestore';
+import { auth, provider, db } from '../lib/firebase';
+import { useContext, useState, useEffect, useCallback } from 'react';
 import { UserContext } from '@/lib/context';
-
+import debounce from 'lodash.debounce';
 
 export default function EnterPage({ }) {
 
@@ -49,7 +50,7 @@ function UsernameForm() {
   const [loading, setLoading] = useState(false);
 
   // grab user and username from global context
-  const [user, username] = useContext(UserContext);
+  const { user, username } = useContext(UserContext);
 
   useEffect(() => {
     checkUsername(formValue);
@@ -70,7 +71,7 @@ function UsernameForm() {
     }
     //TODO: i guess test here checks to see if regex is valid??? kinda cool
     if (re.test(val)) {
-      setFormValue(true);
+      setFormValue(val);
       setLoading(true);
       setIsValid(false);
     }
@@ -92,9 +93,33 @@ function UsernameForm() {
     []
   );
 
+  const onSubmit = async (e) => {
+    // prevent the browser default behavior (which is to refresh the page)
+    e.preventDefault();
+    
+    // create refs for both documents
+    const userDoc = doc(db, "users", user);
+    const usernameDoc = doc(db, "usernames", username);
 
+    // commit both docs together as a batch write
+    const batch = writeBatch(db);
+    batch.set(userDoc, { username: formValue, photoURL: user.photoURL, displayName: user.displayName });
+    batch.set(usernameDoc, { uid: user.uid });
 
+    await batch.commit();
+  };
 
+  function UsernameMessage({ username, isValid, loading }) {
+    if (loading) {
+      return <p>checking...</p>
+    } else if (isValid) {
+      return <p className="text-success">{username} is available!</p>;
+    } else if (username && !isValid) {
+      return <p className="text-danger">that username is taken!</p>;
+    } else {
+      return <p></p>;
+    }
+  }
 
   return (
     !username && (
@@ -105,13 +130,14 @@ function UsernameForm() {
                 This is a technique known as controlled input. We do that by setting the value to the form
                 value state on the component and then have a handler for when that value changed called onChange */}
             <input name="username" placeholder="username" value={formValue} onChange={onChange} />
+            <UsernameMessage username={username} isValid={isValid} loading={loading} />
             <button type="submit" className='btn-green' disabled={!isValid}>
               choose
             </button>
             
             <h3>debug mode!</h3>
             <div>
-              username: {formValue}
+              username: {formValue.toString()}
               <br />
               loading: {loading.toString()}
               <br />
